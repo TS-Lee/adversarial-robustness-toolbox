@@ -52,6 +52,7 @@ class GradientMatchingAttack(Attack):
         "max_trials",
         "max_epochs",
         "learning_rate_schedule",
+        "poison_uniform_distribution_over_classes",
         "epsilon",
         "clip_values",
         "batch_size",
@@ -67,6 +68,7 @@ class GradientMatchingAttack(Attack):
         epsilon: float = 0.1,
         max_trials: int = 8,
         max_epochs: int = 250,
+        poison_uniform_distribution_over_classes: bool = False,
         learning_rate_schedule: Tuple[List[float], List[int]] = ([1e-1, 1e-2, 1e-3, 1e-4], [100, 150, 200, 220]),
         batch_size: int = 128,
         clip_values: Tuple[float, float] = (0, 1.0),
@@ -80,6 +82,7 @@ class GradientMatchingAttack(Attack):
         :param epsilon: The L-inf perturbation budget.
         :param max_trials: The maximum number of restarts to optimize the poison.
         :param max_epochs: The maximum number of epochs to optimize the train per trial.
+        :param poison_uniform_distribution_over_classes: Set to distribute the poisoned samples evenly across the target classes.
         :param learning_rate_schedule: The learning rate schedule to optimize the poison.
             A List of (learning rate, epoch) pairs. The learning rate is used
             if the current epoch is less than the specified epoch.
@@ -97,6 +100,7 @@ class GradientMatchingAttack(Attack):
         self.max_epochs = max_epochs
         self.batch_size = batch_size
         self.clip_values = clip_values
+        self.poison_uniform_distribution_over_classes = poison_uniform_distribution_over_classes
 
         if verbose is True:
             verbose = 1
@@ -426,9 +430,13 @@ class GradientMatchingAttack(Attack):
         else:
             y_train_classes = y_train
         for _ in trange(self.max_trials):
-            indices_poison = np.random.permutation(np.where([y in classes_target for y in y_train_classes])[0])[
-                :num_poison_samples
-            ]
+            if self.poison_uniform_distribution_over_classes:
+                num_poison_samples_per_class = num_poison_samples // len(classes_target)
+                indices_poison = np.concatenate([np.random.permutation(np.where([y==y_target for y in y_train_classes])[0])[:num_poison_samples_per_class] for y_target in classes_target], axis=0)
+            else:
+                indices_poison = np.random.permutation(np.where([y in classes_target for y in y_train_classes])[0])[
+                    :num_poison_samples
+                ]
             x_poison = x_train[indices_poison]
             y_poison = y_train[indices_poison]
             self.__initialize_poison(x_trigger, y_trigger, x_poison, y_poison)
